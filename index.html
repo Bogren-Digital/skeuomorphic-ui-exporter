@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="globalstate.js"></script>
+    <script src="utilities.js"></script>
+    <script src="exportobject.js"></script>
+    <script src="exporters.js"></script>
+    <script src="metadatagenerator.js"></script>
+    <script src="positionsetter.js"></script>
+    <script src="layerorderreverser.js"></script>
+    <script src="grouplayermerger.js"></script>
+    <script src="registerlisteners.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <img src="icons/Bogren-Logo.png" alt="Bogren Digital Logo" class="logo">
+  <sp-heading>Skeuomorphic UI Exporter</sp-heading>
+
+  <details class="section" open>
+    <summary>Export</summary>
+    <div class="section-content">
+      <div class="form-group">
+        <label>Mode:</label>
+        <sp-radio-group id="exportModeGroup" selected="transparent">
+          <sp-radio value="transparent">Transparent</sp-radio>
+          <sp-radio value="opaque">Opaque</sp-radio>
+        </sp-radio-group>
+      </div>
+      <sp-button id="btnExport">Export all images</sp-button>
+      <sp-button id="btnMetadata">Generate metadata</sp-button>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>Utilities</summary>
+    <div class="section-content">
+      <sp-button id="btnSetPosition">Set Layer Position</sp-button>
+      <sp-button id="btnReverseLayerOrder">Reverse Layer Order</sp-button>
+      <sp-button id="btnMergeGroupLayers">Merge Group Layers</sp-button>
+    </div>
+  </details>
+
+  <!-- Position Dialog -->
+  <dialog id="positionDialog">
+    <div class="dialog-content">
+      <sp-heading size="s">Set Layer Position</sp-heading>
+      <div class="form-group">
+        <label for="xPosition">X Position:</label>
+        <sp-textfield id="xPosition" type="number" placeholder="0"></sp-textfield>
+      </div>
+      <div class="form-group">
+        <label for="yPosition">Y Position:</label>
+        <sp-textfield id="yPosition" type="number" placeholder="0"></sp-textfield>
+      </div>
+      <div class="dialog-buttons">
+        <sp-button id="btnSubmitPosition" variant="cta">Submit</sp-button>
+        <sp-button id="btnCancelPosition">Cancel</sp-button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Group Name Dialog -->
+  <dialog id="groupNameDialog">
+    <div class="dialog-content">
+      <sp-heading size="s">Merge Group Layers</sp-heading>
+      <div class="form-group">
+        <label for="groupName">Group Name:</label>
+        <sp-textfield id="groupName" placeholder="Enter group name"></sp-textfield>
+      </div>
+      <div class="dialog-buttons">
+        <sp-button id="btnSubmitGroupName" variant="cta">Merge</sp-button>
+        <sp-button id="btnCancelGroupName">Cancel</sp-button>
+      </div>
+    </div>
+  </dialog>
+
+  <footer>
+  </footer>
+</body>
+</html>
