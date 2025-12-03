@@ -156,6 +156,29 @@ class Utilities {
     }
 
     /**
+     * Finds a hitbox mask layer for a component group.
+     * A hitbox mask is a non-group layer in the parent group with the same name as the component group.
+     * @param {Object} parentGroup - The parent group containing the component
+     * @param {string} componentGroupName - Name of the component group to find mask for
+     * @returns {Object|null} The hitbox mask layer or null if not found
+     */
+    findHitboxMaskForGroup(parentGroup, componentGroupName) {
+        if (!parentGroup || !parentGroup.layers) {
+            return null;
+        }
+
+        for (let i = 0; i < parentGroup.layers.length; i++) {
+            const layer = parentGroup.layers[i];
+            
+            if (layer.name === componentGroupName && (!layer.layers || layer.layers.length === 0)) {
+                return layer;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Reverses the order of layers within a group.
      * @param {Object} group - The group layer to reverse
      */

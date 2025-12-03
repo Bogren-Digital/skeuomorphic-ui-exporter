@@ -69,6 +69,36 @@ async function exportAll() {
                         await workingDocument.saveAs.png(file, exporter.exportOptions);
                         frame.visible = false;
                     }
+
+                    // Export hitbox mask if it exists
+                    if (exporter.exportObject.hasHitboxMask()) {
+                        console.log("Exporting hitbox mask for", exporter.exportObject.getName());
+
+                        for (const frame of subGroup.layers) {
+                            frame.visible = false;
+                        }
+
+                        const hitboxMaskLayer = exporter.exportObject.getHitboxMaskLayer(workingDocument);
+                        if (hitboxMaskLayer) {
+                            hitboxMaskLayer.visible = true;
+
+                            const currentWidth = workingDocument.width;
+                            const currentHeight = workingDocument.height;
+                            const newWidth = Math.round(currentWidth / 10);
+                            const newHeight = Math.round(currentHeight / 10);
+
+                            console.log(`Resizing hitbox mask from ${currentWidth}x${currentHeight} to ${newWidth}x${newHeight}`);
+
+                            await workingDocument.resizeImage(newWidth, newHeight, 72, "bicubic");
+
+                            const folderToExport = hasMultipleFrames ? subGroupFolder : groupFolder;
+                            const maskFileName = exporter.exportObject.getHitboxMaskFileName();
+                            const maskFile = await folderToExport.createFile(maskFileName, { overwrite: true });
+                            await workingDocument.saveAs.png(maskFile, exporter.exportOptions);
+
+                            console.log("Hitbox mask exported:", maskFileName);
+                        }
+                    }
                 } catch (error) {
                     console.error("Error in modal execution:", error);
                     throw error;

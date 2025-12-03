@@ -183,6 +183,11 @@ class GroupExportObject extends ExportObject {
     this.group = group;
     this.groupName = buildHierarchicalName(group);
     this.type = group.parent ? group.parent.name.toUpperCase() : null;
+
+    this.hitboxMaskLayer = null;
+    if (group.parent) {
+      this.hitboxMaskLayer = utils.findHitboxMaskForGroup(group.parent, group.name);
+    }
   }
   
   getLayer(document = this.document) {
@@ -206,9 +211,42 @@ class GroupExportObject extends ExportObject {
     return this.type;
   }
 
+  /**
+   * Checks if this group has an associated hitbox mask layer.
+   * @returns {boolean} True if hitbox mask exists
+   */
+  hasHitboxMask() {
+    return this.hitboxMaskLayer !== null;
+  }
+
+  /**
+   * Gets the hitbox mask layer for this group.
+   * @param {Object} document - The Photoshop document
+   * @returns {Object|null} The hitbox mask layer or null
+   */
+  getHitboxMaskLayer(document = this.document) {
+    if (!this.hitboxMaskLayer) {
+      return null;
+    }
+    return this.utils.findLayerById(document.layers, this.hitboxMaskLayer.id);
+  }
+
+  /**
+   * Gets the file name for the hitbox mask export.
+   * Format: <ParentName>_<ComponentName>_HitboxMask.png
+   * @returns {string} The hitbox mask file name
+   */
+  getHitboxMaskFileName() {
+    const parent = this.group.parent;
+    const parentName = parent ? parent.name.replace(/[^a-zA-Z0-9]/g, "_") : "";
+    const componentName = this.group.name.replace(/[^a-zA-Z0-9]/g, "_");
+    return `${parentName}_${componentName}_HitboxMask.png`;
+  }
+
   getMetadata() {
     const tagName = this.getType() || "GROUP";
-    return `<${tagName} name="${this.groupName}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" numberOfFrames="${this.getNumberOfFrames()}" fileNamePrefix="${this.getFileNamePrefix()}" fileNameSuffix="${this.getFileNameSuffix()}" imageType="raster" />`;
+    const hitboxAttr = this.hasHitboxMask() ? ` hitboxMask="${this.getHitboxMaskFileName()}"` : "";
+    return `<${tagName} name="${this.groupName}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" numberOfFrames="${this.getNumberOfFrames()}" fileNamePrefix="${this.getFileNamePrefix()}" fileNameSuffix="${this.getFileNameSuffix()}"${hitboxAttr} imageType="raster" />`;
   }
 }
 
@@ -227,6 +265,38 @@ function exportObjectExists(document, exportObject) {
 }
 
 /**
+ * Checks if a layer is a hitbox mask (a non-group layer that matches a component name).
+ * @param {Array} rootLayers - All root layers in the document
+ * @param {Object} layer - The layer to check
+ * @param {Utilities} utils - Utilities instance
+ * @returns {boolean} True if the layer is a hitbox mask
+ */
+function isHitboxMask(rootLayers, layer, utils) {
+  if (layer.layers && layer.layers.length > 0) {
+    return false;
+  }
+
+  let parent = layer.parent;
+  if (!parent || parent.parent !== null) {
+    return false;
+  }
+
+  const groups = utils.getGroups(rootLayers);
+  for (const group of groups) {
+    if (group.id === parent.id) {
+      const subGroups = utils.getGroups(group.layers);
+      for (const subGroup of subGroups) {
+        if (subGroup.name === layer.name) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Gets all export objects from the document based on layer structure and naming.
  * @param {Object} document - The Photoshop document
  * @param {Utilities} utils - Utilities instance
@@ -237,7 +307,9 @@ function getAllExportObjects(document, utils) {
   const rootLayers = document.layers;
   for (const layer of rootLayers) {
     if (!layer.layers || layer.layers.length === 0) {
-      exportObjects.push(new LayerExportObject(document, utils, layer.name));
+      if (!isHitboxMask(rootLayers, layer, utils)) {
+        exportObjects.push(new LayerExportObject(document, utils, layer.name));
+      }
     }
   }
 
