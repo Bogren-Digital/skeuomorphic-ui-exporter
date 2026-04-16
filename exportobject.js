@@ -94,6 +94,23 @@ class ExportObject {
   }
 
   /**
+   * Gets the file name suffix for 2x exported files.
+   * @returns {string} The 2x file suffix
+   */
+  getFileNameSuffix2x() {
+    return `@2x.png`;
+  }
+
+  /**
+   * Gets the sanitized 2x export file name.
+   * @returns {string} The 2x file name
+   */
+  getExportFileName2x() {
+    const fileName = this.getName().replace(/[^a-zA-Z0-9]/g, "_");
+    return `${fileName}@2x${this.getFileNameSuffix()}`;
+  }
+
+  /**
    * Gets the export directory for this object.
    * Creates a subfolder based on parent name if applicable.
    * @returns {Object} The folder object
@@ -121,6 +138,10 @@ class LayerExportObject extends ExportObject {
 
   getMetadata() {
     return `<IMAGE name="${this.getName()}" file="${this.getExportFileName()}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" imageType="raster" />`;
+  }
+
+  getMetadata1x2x() {
+    return `<IMAGE name="${this.getName()}" file="${this.getExportFileName()}" file2x="${this.getExportFileName2x()}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" imageType="raster" />`;
   }
 }
 
@@ -151,6 +172,10 @@ class FirstFrameExportObject extends ExportObject {
     getMetadata() {
       return `<IMAGE name="${this.getName()}" file="${this.getExportFileName()}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" imageType="raster" />`;
     }
+
+    getMetadata1x2x() {
+      return `<IMAGE name="${this.getName()}" file="${this.getExportFileName()}" file2x="${this.getExportFileName2x()}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" imageType="raster" />`;
+    }
 }
 
 /**
@@ -170,6 +195,10 @@ class TweenableExportObject extends FirstFrameExportObject {
 
   getMetadata() {
     return `<TWEENABLE name="${this.getName()}" file="${this.getExportFileName()}" minX="${this.getBounds().left}" minY="${this.getBounds().top}" maxX="${this.getLastFrame().bounds.left}" maxY="${this.getLastFrame().bounds.top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" imageType="raster" />`;
+  }
+
+  getMetadata1x2x() {
+    return `<TWEENABLE name="${this.getName()}" file="${this.getExportFileName()}" file2x="${this.getExportFileName2x()}" minX="${this.getBounds().left}" minY="${this.getBounds().top}" maxX="${this.getLastFrame().bounds.left}" maxY="${this.getLastFrame().bounds.top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" imageType="raster" />`;
   }
 }
 
@@ -247,6 +276,12 @@ class GroupExportObject extends ExportObject {
     const tagName = this.getType() || "GROUP";
     const hitboxAttr = this.hasHitboxMask() ? ` hitboxMask="${this.getHitboxMaskFileName()}"` : "";
     return `<${tagName} name="${this.groupName}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" numberOfFrames="${this.getNumberOfFrames()}" fileNamePrefix="${this.getFileNamePrefix()}" fileNameSuffix="${this.getFileNameSuffix()}"${hitboxAttr} imageType="raster" />`;
+  }
+
+  getMetadata1x2x() {
+    const tagName = this.getType() || "GROUP";
+    const hitboxAttr = this.hasHitboxMask() ? ` hitboxMask="${this.getHitboxMaskFileName()}"` : "";
+    return `<${tagName} name="${this.groupName}" x="${this.getBounds().left}" y="${this.getBounds().top}" width="${this.getBounds().right - this.getBounds().left}" height="${this.getBounds().bottom - this.getBounds().top}" numberOfFrames="${this.getNumberOfFrames()}" fileNamePrefix="${this.getFileNamePrefix()}" fileNameSuffix="${this.getFileNameSuffix()}" fileNameSuffix2x="${this.getFileNameSuffix2x()}"${hitboxAttr} imageType="raster" />`;
   }
 }
 
