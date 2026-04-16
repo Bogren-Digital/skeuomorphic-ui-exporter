@@ -19,7 +19,7 @@ async function generateMetadata() {
         for (const exportObject of exportObjects) {
             const progress = (exportObjects.indexOf(exportObject) + 1.0) / exportObjects.length;
             executionContext.reportProgress({value: progress, commandName: `Generating metadata for ${exportObject.getName()}`});
-            xml += `  ${exportObject.getMetadata()}\n`;
+            xml += `  ${await exportObject.getMetadata()}\n`;
         }
         xml += '</metadata>';
 
@@ -55,7 +55,7 @@ async function generateMetadata1x2x() {
         for (const exportObject of exportObjects) {
             const progress = (exportObjects.indexOf(exportObject) + 1.0) / exportObjects.length;
             executionContext.reportProgress({value: progress, commandName: `Generating 1x/2x metadata for ${exportObject.getName()}`});
-            xml += `  ${exportObject.getMetadata1x2x()}\n`;
+            xml += `  ${await exportObject.getMetadata1x2x()}\n`;
         }
         xml += '</metadata>';
 

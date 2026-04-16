@@ -151,8 +151,9 @@ async function exportAll() {
             });
             
             exporters.push(layerExporter);
-        }
-        else {
+        } else if (exportObject instanceof TextExportObject) {
+            // Text layers produce metadata only, no image export
+        } else {
             throw new Error(`Unsupported export object type: ${exportObject}`);
         }
     }
@@ -347,6 +348,8 @@ async function exportAll1x2x() {
             });
 
             exporters.push(layerExporter);
+        } else if (exportObject instanceof TextExportObject) {
+            // Text layers produce metadata only, no image export
         } else {
             throw new Error(`Unsupported export object type: ${exportObject}`);
         }

@@ -286,6 +286,69 @@ class GroupExportObject extends ExportObject {
 }
 
 /**
+ * Export object for a text layer inside the "Text" root group.
+ * Produces TEXT metadata with font properties via batchPlay; no image is exported.
+ */
+class TextExportObject extends ExportObject {
+  constructor(document, utils, layerName) {
+    super(document, utils);
+    this.layerName = layerName;
+  }
+
+  getLayer(document = this.document) {
+    return this.utils.findLayerByName(document.layers, this.layerName);
+  }
+
+  /**
+   * Fetches text properties via batchPlay (font, style, size, color, content).
+   * The DOM API doesn't expose these — batchPlay is required.
+   */
+  async _getTextProperties() {
+    const { action } = require("photoshop");
+    const layer = this.getLayer();
+
+    const [textResult] = await action.batchPlay([{
+      _obj: "get",
+      _target: [
+        { _property: "textKey" },
+        { _ref: "layer", _id: layer.id }
+      ]
+    }], {});
+
+    const tk = textResult.textKey;
+    const style = tk.textStyleRange[0].textStyle;
+
+    const c = style.color;
+    const colorHex = [
+      Math.round(c.red),
+      Math.round(c.grain),  // "grain" = green in batchPlay
+      Math.round(c.blue),
+      255
+    ].map(function(v) { return v.toString(16).padStart(2, "0"); }).join("").toUpperCase();
+
+    return {
+      content: tk.textKey,
+      fontName: style.fontName,
+      fontStyle: style.fontStyleName,
+      fontSize: style.size._value,
+      colorHex: colorHex
+    };
+  }
+
+  async getMetadata() {
+    const layer = this.getLayer();
+    const bounds = this.getBounds();
+    const tp = await this._getTextProperties();
+
+    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" color="${tp.colorHex}" imageType="vector"><![CDATA[${tp.content}]]></TEXT>`;
+  }
+
+  async getMetadata1x2x() {
+    return await this.getMetadata();
+  }
+}
+
+/**
  * Checks if a proposed export object exists in the document.
  * @param {Object} document - The Photoshop document
  * @param {ExportObject} exportObject - The export object to check
@@ -352,6 +415,14 @@ function getAllExportObjects(document, utils) {
   const groups = utils.getGroups(document.layers);
   for (const group of groups) {
     if (group.name.toLowerCase() === "ignore") continue;
+
+    if (group.name.toLowerCase() === "text") {
+      for (const layer of group.layers) {
+        exportObjects.push(new TextExportObject(document, utils, layer.name));
+      }
+      continue;
+    }
+
     const subGroups = utils.getGroups(group.layers);
     for (const subGroup of subGroups) {
       exportObjects.push(new GroupExportObject(document, utils, subGroup));
