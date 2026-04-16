@@ -263,7 +263,7 @@ async function exportAll1x2x() {
                         frame.visible = false;
                     }
 
-                    // --- Hitbox mask: 1x only (same as current behavior) ---
+                    // --- Hitbox mask: 1x only, sized at 1/10 of native crop ---
                     if (exporter.exportObject.hasHitboxMask()) {
                         console.log("Exporting hitbox mask for", exporter.exportObject.getName());
 
@@ -275,10 +275,8 @@ async function exportAll1x2x() {
                         if (hitboxMaskLayer) {
                             hitboxMaskLayer.visible = true;
 
-                            const currentWidth = workingDocument.width;
-                            const currentHeight = workingDocument.height;
-                            const newWidth = Math.round(currentWidth / 10);
-                            const newHeight = Math.round(currentHeight / 10);
+                            const newWidth = Math.round(nativeWidth / 10);
+                            const newHeight = Math.round(nativeHeight / 10);
 
                             await workingDocument.resizeImage(newWidth, newHeight, 72, "bicubic");
 
