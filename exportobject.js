@@ -17,6 +17,102 @@ function buildHierarchicalName(layer) {
 }
 
 /**
+ * Fetches gradient overlay effect for a layer via batchPlay.
+ * Returns null if the layer has no gradient overlay.
+ * @param {number} layerId - The layer ID
+ * @returns {Object|null} Gradient overlay properties or null
+ */
+async function getGradientOverlayForLayer(layerId) {
+  const { action } = require("photoshop");
+
+  try {
+    const [result] = await action.batchPlay([{
+      _obj: "get",
+      _target: [
+        { _property: "layerEffects" },
+        { _ref: "layer", _id: layerId }
+      ]
+    }], {});
+
+    const g = result.layerEffects && result.layerEffects.gradientFill;
+    if (!g) return null;
+
+    const stops = (g.gradient.colors || []).map(function(stop) {
+      const sc = stop.color;
+      const hex = [
+        Math.round(sc.red),
+        Math.round(sc.grain),
+        Math.round(sc.blue),
+        255
+      ].map(function(v) { return v.toString(16).padStart(2, "0"); }).join("").toUpperCase();
+
+      return {
+        location: Math.round(stop.location / 4096 * 100),
+        midpoint: stop.midpoint || 50,
+        color: hex
+      };
+    });
+
+    return {
+      type: g.type._value || g.type,
+      angle: g.angle ? g.angle._value : 0,
+      scale: g.scale ? g.scale._value : 100,
+      opacity: g.opacity ? g.opacity._value : 100,
+      reverse: g.reverse || false,
+      dither: g.dither || false,
+      align: g.align !== undefined ? g.align : true,
+      stops: stops
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Builds a gradientOverlay XML fragment from gradient data.
+ * @param {Object} gradient - Gradient data from getGradientOverlayForLayer
+ * @param {string} indent - Indentation prefix
+ * @returns {string} XML fragment or empty string
+ */
+function buildGradientXml(gradient, indent) {
+  if (!gradient) return "";
+  const stopsXml = gradient.stops.map(function(s) {
+    return `${indent}  <stop location="${s.location}" midpoint="${s.midpoint}" color="${s.color}" />`;
+  }).join("\n");
+  return `\n${indent}<gradientOverlay type="${gradient.type}" angle="${gradient.angle}" scale="${gradient.scale}" opacity="${gradient.opacity}" reverse="${gradient.reverse}" dither="${gradient.dither}" align="${gradient.align}">\n${stopsXml}\n${indent}</gradientOverlay>`;
+}
+
+/**
+ * Gets the fill color of a shape layer via batchPlay.
+ * Returns RRGGBBAA hex string, or "000000FF" if unavailable.
+ * @param {number} layerId - The layer ID
+ * @returns {string} Color hex string
+ */
+async function getShapeFillColor(layerId) {
+  const { action } = require("photoshop");
+
+  try {
+    const [result] = await action.batchPlay([{
+      _obj: "get",
+      _target: [
+        { _property: "adjustment" },
+        { _ref: "layer", _id: layerId }
+      ]
+    }], {});
+
+    const c = result.adjustment[0].color;
+    return [
+      Math.round(c.red),
+      Math.round(c.grain),
+      Math.round(c.blue),
+      255
+    ].map(function(v) { return v.toString(16).padStart(2, "0"); }).join("").toUpperCase();
+  } catch (e) {
+    return "000000FF";
+  }
+}
+
+/**
  * Base class for export objects representing layers or groups to be exported.
  * Provides common functionality for getting layer info, bounds, and export paths.
  */
@@ -339,72 +435,96 @@ class TextExportObject extends ExportObject {
     };
   }
 
-  /**
-   * Fetches gradient overlay effect via batchPlay, if present.
-   * Returns null if the layer has no gradient overlay.
-   */
-  async _getGradientOverlay() {
-    const { action } = require("photoshop");
-    const layer = this.getLayer();
-
-    try {
-      const [result] = await action.batchPlay([{
-        _obj: "get",
-        _target: [
-          { _property: "layerEffects" },
-          { _ref: "layer", _id: layer.id }
-        ]
-      }], {});
-
-      const g = result.layerEffects && result.layerEffects.gradientFill;
-      if (!g) return null;
-
-      const stops = (g.gradient.colors || []).map(function(stop) {
-        const sc = stop.color;
-        const hex = [
-          Math.round(sc.red),
-          Math.round(sc.grain),
-          Math.round(sc.blue),
-          255
-        ].map(function(v) { return v.toString(16).padStart(2, "0"); }).join("").toUpperCase();
-
-        return {
-          location: Math.round(stop.location / 4096 * 100),
-          midpoint: stop.midpoint || 50,
-          color: hex
-        };
-      });
-
-      return {
-        type: g.type._value || g.type,
-        angle: g.angle ? g.angle._value : 0,
-        scale: g.scale ? g.scale._value : 100,
-        opacity: g.opacity ? g.opacity._value : 100,
-        reverse: g.reverse || false,
-        dither: g.dither || false,
-        align: g.align !== undefined ? g.align : true,
-        stops: stops
-      };
-    } catch (e) {
-      return null;
-    }
-  }
-
   async getMetadata() {
     const layer = this.getLayer();
     const bounds = this.getBounds();
     const tp = await this._getTextProperties();
-    const gradient = await this._getGradientOverlay();
+    const gradient = await getGradientOverlayForLayer(layer.id);
+    const gradientXml = buildGradientXml(gradient, "    ");
 
-    let inner = "";
-    if (gradient) {
-      const stopsXml = gradient.stops.map(function(s) {
-        return `      <stop location="${s.location}" midpoint="${s.midpoint}" color="${s.color}" />`;
-      }).join("\n");
-      inner = `\n    <gradientOverlay type="${gradient.type}" angle="${gradient.angle}" scale="${gradient.scale}" opacity="${gradient.opacity}" reverse="${gradient.reverse}" dither="${gradient.dither}" align="${gradient.align}">\n${stopsXml}\n    </gradientOverlay>\n    `;
+    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" leading="${tp.leading}" tracking="${tp.tracking}" horizontalScale="${tp.horizontalScale}" verticalScale="${tp.verticalScale}" color="${tp.colorHex}" imageType="vector">${gradientXml}\n    <![CDATA[${tp.content}]]>\n  </TEXT>`;
+  }
+
+  async getMetadata1x2x() {
+    return await this.getMetadata();
+  }
+}
+
+/**
+ * Export object for a level meter component inside the "LevelMeter" root group.
+ * Each meter has Mono and Stereo sub-groups with bar layers and optional red lines.
+ * No image is exported — metadata only.
+ */
+class LevelMeterExportObject extends ExportObject {
+  constructor(document, utils, meterGroup) {
+    super(document, utils);
+    this.meterGroup = meterGroup;
+  }
+
+  getLayer(document = this.document) {
+    return this.utils.findLayerById(document.layers, this.meterGroup.id);
+  }
+
+  getName() {
+    return this.meterGroup.name;
+  }
+
+  /**
+   * Builds XML for a single bar element (Mono, Left, or Right).
+   * Includes x,y,width,height,color and optional gradientOverlay and redline.
+   */
+  async _buildBarXml(tagName, barLayer, redLineLayer, indent) {
+    const b = barLayer.bounds;
+    const color = await getShapeFillColor(barLayer.id);
+    const gradient = await getGradientOverlayForLayer(barLayer.id);
+    const gradientXml = buildGradientXml(gradient, indent + "  ");
+
+    let redLineXml = "";
+    if (redLineLayer) {
+      const rb = redLineLayer.bounds;
+      const redColor = await getShapeFillColor(redLineLayer.id);
+      redLineXml = `\n${indent}  <REDLINE x="${rb.left}" y="${rb.top}" width="${rb.right - rb.left}" height="${rb.bottom - rb.top}" color="${redColor}" />`;
     }
 
-    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" leading="${tp.leading}" tracking="${tp.tracking}" horizontalScale="${tp.horizontalScale}" verticalScale="${tp.verticalScale}" color="${tp.colorHex}" imageType="vector">${inner}<![CDATA[${tp.content}]]></TEXT>`;
+    return `${indent}<${tagName} x="${b.left}" y="${b.top}" width="${b.right - b.left}" height="${b.bottom - b.top}" color="${color}">${gradientXml}${redLineXml}\n${indent}</${tagName}>`;
+  }
+
+  async getMetadata() {
+    const group = this.getLayer();
+    let xml = `<LEVELMETER name="${this.getName()}" imageType="vector">`;
+
+    // Find Mono and Stereo sub-groups
+    const monoGroup = this.utils.findLayerByName(group.layers, "Mono");
+    const stereoGroup = this.utils.findLayerByName(group.layers, "Stereo");
+
+    if (monoGroup) {
+      const monoBar = this.utils.findLayerByName(monoGroup.layers, "Mono");
+      const monoRedLine = this.utils.findLayerByName(monoGroup.layers, "RedLine_Mono");
+      if (monoBar) {
+        xml += "\n" + await this._buildBarXml("MONO", monoBar, monoRedLine, "    ");
+      }
+    }
+
+    if (stereoGroup) {
+      xml += "\n    <STEREO>";
+
+      const leftBar = this.utils.findLayerByName(stereoGroup.layers, "Left");
+      const leftRedLine = this.utils.findLayerByName(stereoGroup.layers, "RedLine_Left");
+      if (leftBar) {
+        xml += "\n" + await this._buildBarXml("LEFT", leftBar, leftRedLine, "      ");
+      }
+
+      const rightBar = this.utils.findLayerByName(stereoGroup.layers, "Right");
+      const rightRedLine = this.utils.findLayerByName(stereoGroup.layers, "RedLine_Right");
+      if (rightBar) {
+        xml += "\n" + await this._buildBarXml("RIGHT", rightBar, rightRedLine, "      ");
+      }
+
+      xml += "\n    </STEREO>";
+    }
+
+    xml += "\n  </LEVELMETER>";
+    return xml;
   }
 
   async getMetadata1x2x() {
@@ -483,6 +603,14 @@ function getAllExportObjects(document, utils) {
     if (group.name.toLowerCase() === "text") {
       for (const layer of group.layers) {
         exportObjects.push(new TextExportObject(document, utils, layer.name));
+      }
+      continue;
+    }
+
+    if (group.name.toLowerCase() === "levelmeter") {
+      const meterGroups = utils.getGroups(group.layers);
+      for (const meterGroup of meterGroups) {
+        exportObjects.push(new LevelMeterExportObject(document, utils, meterGroup));
       }
       continue;
     }
