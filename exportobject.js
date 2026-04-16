@@ -339,12 +339,72 @@ class TextExportObject extends ExportObject {
     };
   }
 
+  /**
+   * Fetches gradient overlay effect via batchPlay, if present.
+   * Returns null if the layer has no gradient overlay.
+   */
+  async _getGradientOverlay() {
+    const { action } = require("photoshop");
+    const layer = this.getLayer();
+
+    try {
+      const [result] = await action.batchPlay([{
+        _obj: "get",
+        _target: [
+          { _property: "layerEffects" },
+          { _ref: "layer", _id: layer.id }
+        ]
+      }], {});
+
+      const g = result.layerEffects && result.layerEffects.gradientFill;
+      if (!g) return null;
+
+      const stops = (g.gradient.colors || []).map(function(stop) {
+        const sc = stop.color;
+        const hex = [
+          Math.round(sc.red),
+          Math.round(sc.grain),
+          Math.round(sc.blue),
+          255
+        ].map(function(v) { return v.toString(16).padStart(2, "0"); }).join("").toUpperCase();
+
+        return {
+          location: Math.round(stop.location / 4096 * 100),
+          midpoint: stop.midpoint || 50,
+          color: hex
+        };
+      });
+
+      return {
+        type: g.type._value || g.type,
+        angle: g.angle ? g.angle._value : 0,
+        scale: g.scale ? g.scale._value : 100,
+        opacity: g.opacity ? g.opacity._value : 100,
+        reverse: g.reverse || false,
+        dither: g.dither || false,
+        align: g.align !== undefined ? g.align : true,
+        stops: stops
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   async getMetadata() {
     const layer = this.getLayer();
     const bounds = this.getBounds();
     const tp = await this._getTextProperties();
+    const gradient = await this._getGradientOverlay();
 
-    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" leading="${tp.leading}" tracking="${tp.tracking}" horizontalScale="${tp.horizontalScale}" verticalScale="${tp.verticalScale}" color="${tp.colorHex}" imageType="vector"><![CDATA[${tp.content}]]></TEXT>`;
+    let inner = "";
+    if (gradient) {
+      const stopsXml = gradient.stops.map(function(s) {
+        return `      <stop location="${s.location}" midpoint="${s.midpoint}" color="${s.color}" />`;
+      }).join("\n");
+      inner = `\n    <gradientOverlay type="${gradient.type}" angle="${gradient.angle}" scale="${gradient.scale}" opacity="${gradient.opacity}" reverse="${gradient.reverse}" dither="${gradient.dither}" align="${gradient.align}">\n${stopsXml}\n    </gradientOverlay>\n    `;
+    }
+
+    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" leading="${tp.leading}" tracking="${tp.tracking}" horizontalScale="${tp.horizontalScale}" verticalScale="${tp.verticalScale}" color="${tp.colorHex}" imageType="vector">${inner}<![CDATA[${tp.content}]]></TEXT>`;
   }
 
   async getMetadata1x2x() {
