@@ -331,6 +331,10 @@ class TextExportObject extends ExportObject {
       fontName: style.fontName,
       fontStyle: style.fontStyleName,
       fontSize: style.size._value,
+      leading: style.leading ? style.leading._value : 0,
+      tracking: style.tracking || 0,
+      horizontalScale: style.horizontalScale || 100,
+      verticalScale: style.verticalScale || 100,
       colorHex: colorHex
     };
   }
@@ -340,7 +344,7 @@ class TextExportObject extends ExportObject {
     const bounds = this.getBounds();
     const tp = await this._getTextProperties();
 
-    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" color="${tp.colorHex}" imageType="vector"><![CDATA[${tp.content}]]></TEXT>`;
+    return `<TEXT name="${layer.name}" x="${bounds.left}" y="${bounds.top}" width="${bounds.right - bounds.left}" height="${bounds.bottom - bounds.top}" font="${tp.fontName}" style="${tp.fontStyle}" fontSize="${tp.fontSize}" leading="${tp.leading}" tracking="${tp.tracking}" horizontalScale="${tp.horizontalScale}" verticalScale="${tp.verticalScale}" color="${tp.colorHex}" imageType="vector"><![CDATA[${tp.content}]]></TEXT>`;
   }
 
   async getMetadata1x2x() {
