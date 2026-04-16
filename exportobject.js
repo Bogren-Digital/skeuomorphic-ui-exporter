@@ -341,6 +341,7 @@ function getAllExportObjects(document, utils) {
   let exportObjects = [];
   const rootLayers = document.layers;
   for (const layer of rootLayers) {
+    if (layer.name.toLowerCase() === "ignore") continue;
     if (!layer.layers || layer.layers.length === 0) {
       if (!isHitboxMask(rootLayers, layer, utils)) {
         exportObjects.push(new LayerExportObject(document, utils, layer.name));
@@ -350,6 +351,7 @@ function getAllExportObjects(document, utils) {
 
   const groups = utils.getGroups(document.layers);
   for (const group of groups) {
+    if (group.name.toLowerCase() === "ignore") continue;
     const subGroups = utils.getGroups(group.layers);
     for (const subGroup of subGroups) {
       exportObjects.push(new GroupExportObject(document, utils, subGroup));
