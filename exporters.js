@@ -180,7 +180,7 @@ async function exportAll() {
                     const cropBounds = exporter.exportObject.getBounds(workingDocument);
                     await workingDocument.crop(cropBounds);
 
-                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+                    const subGroupFolder = await exporter.utils.getOrCreateFolder(groupFolder, component.name);
 
                     let index = 0;
                     for (const frame of framesGroup.layers) {
@@ -230,7 +230,7 @@ async function exportAll() {
                     const glowBounds = exporter.exportObject.getGlowBounds(workingDocument);
                     await workingDocument.crop(glowBounds);
 
-                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+                    const subGroupFolder = await exporter.utils.getOrCreateFolder(groupFolder, component.name);
 
                     let index = 0;
                     for (const glowFrame of glowGroup.layers) {
@@ -479,7 +479,7 @@ async function exportAll1x2x() {
                     const nativeWidth = workingDocument.width;
                     const nativeHeight = workingDocument.height;
 
-                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+                    const subGroupFolder = await exporter.utils.getOrCreateFolder(groupFolder, component.name);
 
                     // 2x pass
                     const width2x = Math.round(nativeWidth * TARGET_PPI_2X / nativeResolution);
@@ -558,7 +558,7 @@ async function exportAll1x2x() {
                     const nativeWidth = workingDocument.width;
                     const nativeHeight = workingDocument.height;
 
-                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+                    const subGroupFolder = await exporter.utils.getOrCreateFolder(groupFolder, component.name);
 
                     // 2x pass
                     const width2x = Math.round(nativeWidth * TARGET_PPI_2X / nativeResolution);
