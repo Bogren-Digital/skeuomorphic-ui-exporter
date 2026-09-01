@@ -382,6 +382,156 @@ class GroupExportObject extends ExportObject {
 }
 
 /**
+ * Export object for a lit image component inside the "LitImage" root group.
+ *
+ * A lit image is a stateful image whose "lit" states are reconstructed at
+ * load time from base frames plus additive glow maps, instead of shipping
+ * every state as a full image. Expected layer structure:
+ *
+ *   LitImage                (root group — the component type)
+ *   ├─ Body                 (plain layer named like a component: hitbox mask)
+ *   └─ Body                 (component sub-group)
+ *      ├─ Frames            (base frames, e.g. LED off: one layer per frame)
+ *      ├─ Glow              (additive diff maps: one layer per frame, same order)
+ *      └─ anything else     (ignored — e.g. a "Source" group with authored states)
+ *
+ * Frame index follows layer order (top layer = frame 0). Glow layer i pairs
+ * with frame i. Component bounds come from the Frames group; glow maps carry
+ * their own (usually tighter) bounds.
+ */
+class LitImageExportObject extends ExportObject {
+  constructor(document, utils, group) {
+    super(document, utils);
+    this.group = group;
+    this.groupName = buildHierarchicalName(group);
+
+    this.hitboxMaskLayer = null;
+    if (group.parent) {
+      this.hitboxMaskLayer = utils.findHitboxMaskForGroup(group.parent, group.name);
+    }
+  }
+
+  getLayer(document = this.document) {
+    return this.utils.findLayerById(document.layers, this.group.id);
+  }
+
+  getName() {
+    return this.groupName;
+  }
+
+  _findChildGroup(name, document = this.document) {
+    const component = this.getLayer(document);
+    if (!component || !component.layers) {
+      return null;
+    }
+    for (const layer of component.layers) {
+      if (layer.layers && layer.name.toLowerCase() === name.toLowerCase()) {
+        return layer;
+      }
+    }
+    return null;
+  }
+
+  getFramesGroup(document = this.document) {
+    return this._findChildGroup("Frames", document);
+  }
+
+  getGlowGroup(document = this.document) {
+    return this._findChildGroup("Glow", document);
+  }
+
+  /**
+   * Fails loudly on malformed structure — a LitImage without matching
+   * Frames/Glow pairs cannot be reconstructed by the loader.
+   */
+  validate() {
+    const frames = this.getFramesGroup();
+    const glow = this.getGlowGroup();
+    if (!frames || !frames.layers || frames.layers.length === 0) {
+      throw new Error(`LitImage "${this.groupName}": missing or empty "Frames" group`);
+    }
+    if (!glow || !glow.layers || glow.layers.length !== frames.layers.length) {
+      const glowCount = glow && glow.layers ? glow.layers.length : 0;
+      throw new Error(`LitImage "${this.groupName}": "Glow" must contain one layer per frame (frames: ${frames.layers.length}, glow: ${glowCount})`);
+    }
+  }
+
+  getBounds(document = this.document) {
+    const frames = this.getFramesGroup(document);
+    return {
+      left: frames.bounds.left,
+      top: frames.bounds.top,
+      right: frames.bounds.right,
+      bottom: frames.bounds.bottom
+    };
+  }
+
+  getGlowBounds(document = this.document) {
+    const glow = this.getGlowGroup(document);
+    return {
+      left: glow.bounds.left,
+      top: glow.bounds.top,
+      right: glow.bounds.right,
+      bottom: glow.bounds.bottom
+    };
+  }
+
+  getNumberOfFrames() {
+    const frames = this.getFramesGroup();
+    return frames && frames.layers ? frames.layers.length : 0;
+  }
+
+  getFileNamePrefix() {
+    return `${this.groupName}_`;
+  }
+
+  getGlowFileNamePrefix() {
+    return `${this.groupName}_Glow_`;
+  }
+
+  hasHitboxMask() {
+    return this.hitboxMaskLayer !== null;
+  }
+
+  getHitboxMaskLayer(document = this.document) {
+    if (!this.hitboxMaskLayer) {
+      return null;
+    }
+    return this.utils.findLayerById(document.layers, this.hitboxMaskLayer.id);
+  }
+
+  getHitboxMaskFileName() {
+    const parent = this.group.parent;
+    const parentName = parent ? parent.name.replace(/[^a-zA-Z0-9]/g, "_") : "";
+    const componentName = this.group.name.replace(/[^a-zA-Z0-9]/g, "_");
+    return `${parentName}_${componentName}_HitboxMask.png`;
+  }
+
+  _metadataAttributes() {
+    const b = this.getBounds();
+    const g = this.getGlowBounds();
+    const hitboxAttr = this.hasHitboxMask() ? ` hitboxMask="${this.getHitboxMaskFileName()}"` : "";
+    return {
+      bounds: `x="${b.left}" y="${b.top}" width="${b.right - b.left}" height="${b.bottom - b.top}"`,
+      glow: `glowX="${g.left}" glowY="${g.top}" glowWidth="${g.right - g.left}" glowHeight="${g.bottom - g.top}"`,
+      hitboxAttr: hitboxAttr
+    };
+  }
+
+  getMetadata() {
+    this.validate();
+    const a = this._metadataAttributes();
+    return `<LITIMAGE name="${this.groupName}" ${a.bounds} numberOfFrames="${this.getNumberOfFrames()}" fileNamePrefix="${this.getFileNamePrefix()}" fileNameSuffix="${this.getFileNameSuffix()}" glowPrefix="${this.getGlowFileNamePrefix()}" glowSuffix="${this.getFileNameSuffix()}" ${a.glow}${a.hitboxAttr} imageType="raster" />`;
+  }
+
+  getMetadata1x2x() {
+    this.validate();
+    const a = this._metadataAttributes();
+    return `<LITIMAGE name="${this.groupName}" ${a.bounds} numberOfFrames="${this.getNumberOfFrames()}" fileNamePrefix="${this.getFileNamePrefix()}" fileNameSuffix="${this.getFileNameSuffix()}" fileNameSuffix2x="${this.getFileNameSuffix2x()}" glowPrefix="${this.getGlowFileNamePrefix()}" glowSuffix="${this.getFileNameSuffix()}" glowSuffix2x="${this.getFileNameSuffix2x()}" ${a.glow}${a.hitboxAttr} imageType="raster" />`;
+  }
+}
+
+/**
  * Export object for a text layer inside the "Text" root group.
  * Produces TEXT metadata with font properties via batchPlay; no image is exported.
  */
@@ -603,6 +753,14 @@ function getAllExportObjects(document, utils) {
     if (group.name.toLowerCase() === "text") {
       for (const layer of group.layers) {
         exportObjects.push(new TextExportObject(document, utils, layer.name));
+      }
+      continue;
+    }
+
+    if (group.name.toLowerCase() === "litimage") {
+      const subGroups = utils.getGroups(group.layers);
+      for (const subGroup of subGroups) {
+        exportObjects.push(new LitImageExportObject(document, utils, subGroup));
       }
       continue;
     }
