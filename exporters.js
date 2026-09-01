@@ -1,4 +1,15 @@
 /**
+ * Minimum document resolution required for 1x/2x export.
+ */
+const MIN_RESOLUTION_FOR_2X = 144;
+
+/**
+ * Target resolutions for 1x and 2x export variants.
+ */
+const TARGET_PPI_2X = 144;
+const TARGET_PPI_1X = 72;
+
+/**
  * Main export function that processes all export objects in the document.
  */
 async function exportAll() {
@@ -140,13 +151,210 @@ async function exportAll() {
             });
             
             exporters.push(layerExporter);
-        }
-        else {
+        } else if (exportObject instanceof TextExportObject || exportObject instanceof LevelMeterExportObject) {
+            // Metadata-only objects, no image export
+        } else {
             throw new Error(`Unsupported export object type: ${exportObject}`);
         }
     }
 
     // Run all exports
+    for (const exporter of exporters) {
+        await exporter.export();
+    }
+}
+
+async function exportAll1x2x() {
+    const { app, core } = require('photoshop');
+
+    const docResolution = app.activeDocument.resolution;
+    if (docResolution < MIN_RESOLUTION_FOR_2X) {
+        await app.showAlert(`Document resolution is ${docResolution} PPI. Minimum ${MIN_RESOLUTION_FOR_2X} PPI is required for 1x/2x export.`);
+        return;
+    }
+
+    const exportFolder = await getExportFolder();
+    console.log("Export 1x/2x folder:", exportFolder.nativePath);
+
+    const exportOptions = {
+        format: "png",
+        quality: 100,
+        optimizeColors: false,
+        includeICCProfile: true
+    };
+
+    const exporters = [];
+    const exportObjects = getAllExportObjects(app.activeDocument, new Utilities(app, core));
+    console.log("Export 1x/2x objects:", exportObjects);
+
+    for (const exportObject of exportObjects) {
+        if (exportObject instanceof GroupExportObject) {
+            const groupExporter = new Exporter(app, core, exportOptions, exportFolder, {
+                commandName: `Exporting 1x/2x ${exportObject.getName()}`
+            }).withExportObject(exportObject).withExportFunction(async function(executionContext, exporter) {
+                try {
+                    let workingDocument = exporter.app.activeDocument;
+                    const nativeResolution = workingDocument.resolution;
+
+                    const groupFolder = await exporter.exportObject.getExportDirectory();
+                    const subGroup = exporter.exportObject.getLayer(workingDocument);
+
+                    const exportMode = getExportMode();
+                    await exporter.utils.hideAllLayers(workingDocument);
+
+                    if (exportMode === "opaque") {
+                        const backgroundLayer = exporter.utils.findLayerByName(workingDocument.layers, "Background");
+                        if (backgroundLayer) {
+                            backgroundLayer.visible = true;
+                        }
+                    }
+
+                    await exporter.utils.toggleLayerVisibilityRecursivelyUpwards(subGroup, true);
+
+                    const cropBounds = exporter.exportObject.getBounds(workingDocument);
+                    await workingDocument.crop(cropBounds);
+
+                    // Capture native dimensions after crop (before any resize)
+                    const nativeWidth = workingDocument.width;
+                    const nativeHeight = workingDocument.height;
+
+                    const hasMultipleFrames = subGroup.layers.length > 1;
+                    let subGroupFolder = null;
+                    if (hasMultipleFrames) {
+                        subGroupFolder = await groupFolder.createFolder(subGroup.name, { overwrite: true });
+                    }
+
+                    // --- 2x export pass: resize to 144 PPI ---
+                    const width2x = Math.round(nativeWidth * TARGET_PPI_2X / nativeResolution);
+                    const height2x = Math.round(nativeHeight * TARGET_PPI_2X / nativeResolution);
+                    await workingDocument.resizeImage(width2x, height2x, TARGET_PPI_2X, "bicubic");
+
+                    let index = 0;
+                    for (const frame of subGroup.layers) {
+                        frame.visible = true;
+                        const fileName = hasMultipleFrames
+                            ? `${exporter.exportObject.getName()}_${index}@2x${exporter.exportObject.getFileNameSuffix()}`
+                            : `${exporter.exportObject.getName()}@2x${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        const subGroupProgress = (index - 1.0) / subGroup.layers.length * 0.5;
+                        executionContext.reportProgress({value: subGroupProgress, commandName: `Exporting 2x ${exporter.exportObject.getName()}`});
+                        const folderToExport = hasMultipleFrames ? subGroupFolder : groupFolder;
+                        const file = await folderToExport.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        frame.visible = false;
+                    }
+
+                    // --- 1x export pass: resize to 72 PPI (half of 2x) ---
+                    const width1x = Math.round(width2x / 2);
+                    const height1x = Math.round(height2x / 2);
+                    await workingDocument.resizeImage(width1x, height1x, TARGET_PPI_1X, "bicubic");
+
+                    index = 0;
+                    for (const frame of subGroup.layers) {
+                        frame.visible = true;
+                        const fileName = hasMultipleFrames
+                            ? `${exporter.exportObject.getName()}_${index}${exporter.exportObject.getFileNameSuffix()}`
+                            : `${exporter.exportObject.getName()}${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        const subGroupProgress = 0.5 + (index - 1.0) / subGroup.layers.length * 0.5;
+                        executionContext.reportProgress({value: subGroupProgress, commandName: `Exporting 1x ${exporter.exportObject.getName()}`});
+                        const folderToExport = hasMultipleFrames ? subGroupFolder : groupFolder;
+                        const file = await folderToExport.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        frame.visible = false;
+                    }
+
+                    // --- Hitbox mask: 1x only, sized at 1/10 of native crop ---
+                    if (exporter.exportObject.hasHitboxMask()) {
+                        console.log("Exporting hitbox mask for", exporter.exportObject.getName());
+
+                        for (const frame of subGroup.layers) {
+                            frame.visible = false;
+                        }
+
+                        const hitboxMaskLayer = exporter.exportObject.getHitboxMaskLayer(workingDocument);
+                        if (hitboxMaskLayer) {
+                            hitboxMaskLayer.visible = true;
+
+                            const newWidth = Math.round(nativeWidth / 10);
+                            const newHeight = Math.round(nativeHeight / 10);
+
+                            await workingDocument.resizeImage(newWidth, newHeight, 72, "bicubic");
+
+                            const folderToExport = hasMultipleFrames ? subGroupFolder : groupFolder;
+                            const maskFileName = exporter.exportObject.getHitboxMaskFileName();
+                            const maskFile = await folderToExport.createFile(maskFileName, { overwrite: true });
+                            await workingDocument.saveAs.png(maskFile, exporter.exportOptions);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error in 1x/2x modal execution:", error);
+                    throw error;
+                }
+            });
+
+            exporters.push(groupExporter);
+        } else if (exportObject instanceof LayerExportObject || exportObject instanceof FirstFrameExportObject) {
+
+            const layerExporter = new Exporter(app, core, exportOptions, exportFolder, {
+                commandName: `Exporting 1x/2x ${exportObject.getName()}`,
+            }).withExportObject(exportObject).withExportFunction(async function(executionContext, exporter) {
+                try {
+                    let workingDocument = exporter.app.activeDocument;
+                    const nativeResolution = workingDocument.resolution;
+                    const layer = exporter.exportObject.getLayer(workingDocument);
+
+                    const exportMode = getExportMode();
+                    await exporter.utils.hideAllLayers(workingDocument);
+
+                    if (exportMode === "opaque") {
+                        const backgroundLayer = exporter.utils.findLayerByName(workingDocument.layers, "Background");
+                        if (backgroundLayer) {
+                            backgroundLayer.visible = true;
+                        }
+                    }
+
+                    await exporter.utils.toggleLayerVisibilityRecursivelyUpwards(layer, true);
+
+                    const cropBounds = exporter.exportObject.getBounds(workingDocument);
+                    await workingDocument.crop(cropBounds);
+
+                    // Capture native dimensions after crop
+                    const nativeWidth = workingDocument.width;
+                    const nativeHeight = workingDocument.height;
+                    const exportFolder = await exporter.exportObject.getExportDirectory();
+
+                    // 2x export
+                    const width2x = Math.round(nativeWidth * TARGET_PPI_2X / nativeResolution);
+                    const height2x = Math.round(nativeHeight * TARGET_PPI_2X / nativeResolution);
+                    await workingDocument.resizeImage(width2x, height2x, TARGET_PPI_2X, "bicubic");
+
+                    executionContext.reportProgress({value: 0.5, commandName: `Exporting 2x ${exporter.exportObject.getName()}`});
+                    const file2x = await exportFolder.createFile(exporter.exportObject.getExportFileName2x(), { overwrite: true });
+                    await workingDocument.saveAs.png(file2x, exporter.exportOptions);
+
+                    // 1x export
+                    const width1x = Math.round(width2x / 2);
+                    const height1x = Math.round(height2x / 2);
+                    await workingDocument.resizeImage(width1x, height1x, TARGET_PPI_1X, "bicubic");
+
+                    executionContext.reportProgress({value: 1.0, commandName: `Exporting 1x ${exporter.exportObject.getName()}`});
+                    const file1x = await exportFolder.createFile(exporter.exportObject.getExportFileName(), { overwrite: true });
+                    await workingDocument.saveAs.png(file1x, exporter.exportOptions);
+                } catch (error) {
+                    console.error("Error in 1x/2x modal execution:", error);
+                    throw error;
+                }
+            });
+
+            exporters.push(layerExporter);
+        } else if (exportObject instanceof TextExportObject || exportObject instanceof LevelMeterExportObject) {
+            // Metadata-only objects, no image export
+        } else {
+            throw new Error(`Unsupported export object type: ${exportObject}`);
+        }
+    }
+
     for (const exporter of exporters) {
         await exporter.export();
     }

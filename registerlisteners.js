@@ -4,6 +4,8 @@
 
 document.getElementById("btnExport").addEventListener("click", exportAll);
 document.getElementById("btnMetadata").addEventListener("click", generateMetadata);
+document.getElementById("btnExport1x2x").addEventListener("click", exportAll1x2x);
+document.getElementById("btnMetadata1x2x").addEventListener("click", generateMetadata1x2x);
 document.getElementById("btnSetPosition").addEventListener("click", setLayerPosition);
 document.getElementById("btnReverseLayerOrder").addEventListener("click", reverseLayerOrder);
 document.getElementById("btnMergeGroupLayers").addEventListener("click", mergeGroupLayers);
