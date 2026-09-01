@@ -151,6 +151,104 @@ async function exportAll() {
             });
             
             exporters.push(layerExporter);
+        } else if (exportObject instanceof LitImageExportObject) {
+            exportObject.validate();
+
+            // Pass 1: base frames + hitbox mask (own duplicated document —
+            // the mask export resizes the document destructively).
+            const framesExporter = new Exporter(app, core, exportOptions, exportFolder, {
+                commandName: `Exporting ${exportObject.getName()} frames`
+            }).withExportObject(exportObject).withExportFunction(async function(executionContext, exporter) {
+                try {
+                    let workingDocument = exporter.app.activeDocument;
+                    const groupFolder = await exporter.exportObject.getExportDirectory();
+                    const component = exporter.exportObject.getLayer(workingDocument);
+                    const framesGroup = exporter.exportObject.getFramesGroup(workingDocument);
+
+                    const exportMode = getExportMode();
+                    await exporter.utils.hideAllLayers(workingDocument);
+
+                    if (exportMode === "opaque") {
+                        const backgroundLayer = exporter.utils.findLayerByName(workingDocument.layers, "Background");
+                        if (backgroundLayer) {
+                            backgroundLayer.visible = true;
+                        }
+                    }
+
+                    await exporter.utils.toggleLayerVisibilityRecursivelyUpwards(framesGroup, true);
+
+                    const cropBounds = exporter.exportObject.getBounds(workingDocument);
+                    await workingDocument.crop(cropBounds);
+
+                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+
+                    let index = 0;
+                    for (const frame of framesGroup.layers) {
+                        frame.visible = true;
+                        const fileName = `${exporter.exportObject.getName()}_${index}${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        executionContext.reportProgress({value: (index - 1.0) / framesGroup.layers.length, commandName: `Exporting ${exporter.exportObject.getName()}`});
+                        const file = await subGroupFolder.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        frame.visible = false;
+                    }
+
+                    if (exporter.exportObject.hasHitboxMask()) {
+                        const hitboxMaskLayer = exporter.exportObject.getHitboxMaskLayer(workingDocument);
+                        if (hitboxMaskLayer) {
+                            hitboxMaskLayer.visible = true;
+
+                            const newWidth = Math.round(workingDocument.width / 10);
+                            const newHeight = Math.round(workingDocument.height / 10);
+                            await workingDocument.resizeImage(newWidth, newHeight, 72, "bicubic");
+
+                            const maskFile = await subGroupFolder.createFile(exporter.exportObject.getHitboxMaskFileName(), { overwrite: true });
+                            await workingDocument.saveAs.png(maskFile, exporter.exportOptions);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error in modal execution:", error);
+                    throw error;
+                }
+            });
+
+            // Pass 2: glow maps, cropped to their own (tighter) bounds.
+            // Always exported transparent — glow maps are additive diff data,
+            // compositing a background under them would corrupt them.
+            const glowExporter = new Exporter(app, core, exportOptions, exportFolder, {
+                commandName: `Exporting ${exportObject.getName()} glow maps`
+            }).withExportObject(exportObject).withExportFunction(async function(executionContext, exporter) {
+                try {
+                    let workingDocument = exporter.app.activeDocument;
+                    const groupFolder = await exporter.exportObject.getExportDirectory();
+                    const component = exporter.exportObject.getLayer(workingDocument);
+                    const glowGroup = exporter.exportObject.getGlowGroup(workingDocument);
+
+                    await exporter.utils.hideAllLayers(workingDocument);
+                    await exporter.utils.toggleLayerVisibilityRecursivelyUpwards(glowGroup, true);
+
+                    const glowBounds = exporter.exportObject.getGlowBounds(workingDocument);
+                    await workingDocument.crop(glowBounds);
+
+                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+
+                    let index = 0;
+                    for (const glowFrame of glowGroup.layers) {
+                        glowFrame.visible = true;
+                        const fileName = `${exporter.exportObject.getGlowFileNamePrefix()}${index}${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        executionContext.reportProgress({value: (index - 1.0) / glowGroup.layers.length, commandName: `Exporting ${exporter.exportObject.getName()} glow`});
+                        const file = await subGroupFolder.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        glowFrame.visible = false;
+                    }
+                } catch (error) {
+                    console.error("Error in modal execution:", error);
+                    throw error;
+                }
+            });
+
+            exporters.push(framesExporter, glowExporter);
         } else if (exportObject instanceof TextExportObject || exportObject instanceof LevelMeterExportObject) {
             // Metadata-only objects, no image export
         } else {
@@ -348,6 +446,158 @@ async function exportAll1x2x() {
             });
 
             exporters.push(layerExporter);
+        } else if (exportObject instanceof LitImageExportObject) {
+            exportObject.validate();
+
+            // Pass 1: base frames at 2x then 1x, plus hitbox mask at 1/10
+            // of the native crop (own duplicated document).
+            const framesExporter = new Exporter(app, core, exportOptions, exportFolder, {
+                commandName: `Exporting 1x/2x ${exportObject.getName()} frames`
+            }).withExportObject(exportObject).withExportFunction(async function(executionContext, exporter) {
+                try {
+                    let workingDocument = exporter.app.activeDocument;
+                    const nativeResolution = workingDocument.resolution;
+                    const groupFolder = await exporter.exportObject.getExportDirectory();
+                    const component = exporter.exportObject.getLayer(workingDocument);
+                    const framesGroup = exporter.exportObject.getFramesGroup(workingDocument);
+
+                    const exportMode = getExportMode();
+                    await exporter.utils.hideAllLayers(workingDocument);
+
+                    if (exportMode === "opaque") {
+                        const backgroundLayer = exporter.utils.findLayerByName(workingDocument.layers, "Background");
+                        if (backgroundLayer) {
+                            backgroundLayer.visible = true;
+                        }
+                    }
+
+                    await exporter.utils.toggleLayerVisibilityRecursivelyUpwards(framesGroup, true);
+
+                    const cropBounds = exporter.exportObject.getBounds(workingDocument);
+                    await workingDocument.crop(cropBounds);
+
+                    const nativeWidth = workingDocument.width;
+                    const nativeHeight = workingDocument.height;
+
+                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+
+                    // 2x pass
+                    const width2x = Math.round(nativeWidth * TARGET_PPI_2X / nativeResolution);
+                    const height2x = Math.round(nativeHeight * TARGET_PPI_2X / nativeResolution);
+                    await workingDocument.resizeImage(width2x, height2x, TARGET_PPI_2X, "bicubic");
+
+                    let index = 0;
+                    for (const frame of framesGroup.layers) {
+                        frame.visible = true;
+                        const fileName = `${exporter.exportObject.getName()}_${index}@2x${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        executionContext.reportProgress({value: (index - 1.0) / framesGroup.layers.length * 0.5, commandName: `Exporting 2x ${exporter.exportObject.getName()}`});
+                        const file = await subGroupFolder.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        frame.visible = false;
+                    }
+
+                    // 1x pass
+                    const width1x = Math.round(width2x / 2);
+                    const height1x = Math.round(height2x / 2);
+                    await workingDocument.resizeImage(width1x, height1x, TARGET_PPI_1X, "bicubic");
+
+                    index = 0;
+                    for (const frame of framesGroup.layers) {
+                        frame.visible = true;
+                        const fileName = `${exporter.exportObject.getName()}_${index}${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        executionContext.reportProgress({value: 0.5 + (index - 1.0) / framesGroup.layers.length * 0.5, commandName: `Exporting 1x ${exporter.exportObject.getName()}`});
+                        const file = await subGroupFolder.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        frame.visible = false;
+                    }
+
+                    // Hitbox mask: 1x only, sized at 1/10 of native crop
+                    if (exporter.exportObject.hasHitboxMask()) {
+                        for (const frame of framesGroup.layers) {
+                            frame.visible = false;
+                        }
+
+                        const hitboxMaskLayer = exporter.exportObject.getHitboxMaskLayer(workingDocument);
+                        if (hitboxMaskLayer) {
+                            hitboxMaskLayer.visible = true;
+
+                            const newWidth = Math.round(nativeWidth / 10);
+                            const newHeight = Math.round(nativeHeight / 10);
+                            await workingDocument.resizeImage(newWidth, newHeight, 72, "bicubic");
+
+                            const maskFile = await subGroupFolder.createFile(exporter.exportObject.getHitboxMaskFileName(), { overwrite: true });
+                            await workingDocument.saveAs.png(maskFile, exporter.exportOptions);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error in 1x/2x modal execution:", error);
+                    throw error;
+                }
+            });
+
+            // Pass 2: glow maps at 2x then 1x, cropped to their own bounds.
+            // Always exported transparent — glow maps are additive diff data.
+            const glowExporter = new Exporter(app, core, exportOptions, exportFolder, {
+                commandName: `Exporting 1x/2x ${exportObject.getName()} glow maps`
+            }).withExportObject(exportObject).withExportFunction(async function(executionContext, exporter) {
+                try {
+                    let workingDocument = exporter.app.activeDocument;
+                    const nativeResolution = workingDocument.resolution;
+                    const groupFolder = await exporter.exportObject.getExportDirectory();
+                    const component = exporter.exportObject.getLayer(workingDocument);
+                    const glowGroup = exporter.exportObject.getGlowGroup(workingDocument);
+
+                    await exporter.utils.hideAllLayers(workingDocument);
+                    await exporter.utils.toggleLayerVisibilityRecursivelyUpwards(glowGroup, true);
+
+                    const glowBounds = exporter.exportObject.getGlowBounds(workingDocument);
+                    await workingDocument.crop(glowBounds);
+
+                    const nativeWidth = workingDocument.width;
+                    const nativeHeight = workingDocument.height;
+
+                    const subGroupFolder = await groupFolder.createFolder(component.name, { overwrite: true });
+
+                    // 2x pass
+                    const width2x = Math.round(nativeWidth * TARGET_PPI_2X / nativeResolution);
+                    const height2x = Math.round(nativeHeight * TARGET_PPI_2X / nativeResolution);
+                    await workingDocument.resizeImage(width2x, height2x, TARGET_PPI_2X, "bicubic");
+
+                    let index = 0;
+                    for (const glowFrame of glowGroup.layers) {
+                        glowFrame.visible = true;
+                        const fileName = `${exporter.exportObject.getGlowFileNamePrefix()}${index}@2x${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        executionContext.reportProgress({value: (index - 1.0) / glowGroup.layers.length * 0.5, commandName: `Exporting 2x ${exporter.exportObject.getName()} glow`});
+                        const file = await subGroupFolder.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        glowFrame.visible = false;
+                    }
+
+                    // 1x pass
+                    const width1x = Math.round(width2x / 2);
+                    const height1x = Math.round(height2x / 2);
+                    await workingDocument.resizeImage(width1x, height1x, TARGET_PPI_1X, "bicubic");
+
+                    index = 0;
+                    for (const glowFrame of glowGroup.layers) {
+                        glowFrame.visible = true;
+                        const fileName = `${exporter.exportObject.getGlowFileNamePrefix()}${index}${exporter.exportObject.getFileNameSuffix()}`;
+                        index++;
+                        executionContext.reportProgress({value: 0.5 + (index - 1.0) / glowGroup.layers.length * 0.5, commandName: `Exporting 1x ${exporter.exportObject.getName()} glow`});
+                        const file = await subGroupFolder.createFile(fileName, { overwrite: true });
+                        await workingDocument.saveAs.png(file, exporter.exportOptions);
+                        glowFrame.visible = false;
+                    }
+                } catch (error) {
+                    console.error("Error in 1x/2x modal execution:", error);
+                    throw error;
+                }
+            });
+
+            exporters.push(framesExporter, glowExporter);
         } else if (exportObject instanceof TextExportObject || exportObject instanceof LevelMeterExportObject) {
             // Metadata-only objects, no image export
         } else {
